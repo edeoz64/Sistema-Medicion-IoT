@@ -1,0 +1,65 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+    restart: unless-stopped
+
+  influxdb:
+    image: influxdb:1.8
+    container_name: influxdb
+    ports:
+      - "8086:8086"
+    volumes:
+      - ./influxdb:/var/lib/influxdb
+    environment:
+      - INFLUXDB_DB=consumo_electrico
+    restart: unless-stopped
+
+  telegraf:
+    image: telegraf:latest
+    container_name: telegraf
+    volumes:
+      - ./telegraf/telegraf.conf:/etc/telegraf/telegraf.conf:ro
+    depends_on:
+      mosquitto:
+        condition: service_started
+      influxdb:
+        condition: service_started
+    restart: unless-stopped # 
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana:/var/lib/grafana
+    restart: unless-stopped
+
+  sync_hora:
+    build: ./bridge
+    container_name: sync_hora
+    privileged: true
+    volumes:
+      - ./sync_hora.py:/app/sync_hora.py
+    command: python /app/sync_hora.py
+    restart: "no" # Se mantiene así porque solo debe correr una vez al inicio
+
+  bridge:
+    build: ./bridge
+    container_name: puente_python
+    privileged: true
+    volumes:
+      - ./bridge:/app
+    devices:
+      - "/dev/ttyS0:/dev/ttyS0"
+    depends_on:
+      mosquitto:
+        condition: service_started
+      sync_hora:
+        condition: service_completed_successfully
+    restart: unless-stopped
